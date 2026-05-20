@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, send_file, Response
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import os
@@ -6,12 +6,9 @@ from datetime import datetime
 from PIL import Image
 import requests
 import time
-import smtplib
-from email.message import EmailMessage
 
 app = Flask(__name__)
 
-# 🔥 evita crasheos por archivos grandes
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
 UPLOAD_FOLDER = "fotos"
@@ -20,28 +17,22 @@ PDF_FOLDER = "pdfs"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PDF_FOLDER, exist_ok=True)
 
-# 🔐 CONFIG EMAIL (CAMBIAR ESTO)
-EMAIL_SENDER = "guz72013@gmail.com"
-EMAIL_PASSWORD = "muxs dzzb jknj jlho"
-EMAIL_RECEIVER = "guz72013@gmail.com"
-
-CLIENT_ID = "UM9DzKb3TmN1Fbi5sRewrscfCnD"
-CLIENT_SECRET = "0m3aoJdhRPEygjmKdXMWaaihmgf0FM1V2UNes9nLf89VkrsvUeMvsj+D52af1n140YkiXpUPSYdpyaKph97N9g=="
+# ☁️ SIRV
+CLIENT_ID = "TU_CLIENT_ID"
+CLIENT_SECRET = "TU_CLIENT_SECRET"
 SIRV_DOMAIN = "https://gusdovi.sirv.com"
 
-# 🚀 FUNCIÓN SIRV
+# ----------------------------
+# SUBIR IMAGEN A SIRV
+# ----------------------------
 def subir_a_sirv(file):
     try:
         auth = requests.post(
             "https://api.sirv.com/v2/token",
-            json={
-                "clientId": CLIENT_ID,
-                "clientSecret": CLIENT_SECRET
-            }
+            json={"clientId": CLIENT_ID, "clientSecret": CLIENT_SECRET}
         )
 
         if auth.status_code != 200:
-            print("Auth error:", auth.text)
             return "error_auth"
 
         token = auth.json().get("token")
@@ -55,50 +46,24 @@ def subir_a_sirv(file):
         }
 
         file.seek(0)
-        data = file.read()
-
-        response = requests.post(upload_url, headers=headers, data=data)
+        response = requests.post(upload_url, headers=headers, data=file.read())
 
         if response.status_code != 200:
-            print("Upload error:", response.text)
             return "error_upload"
 
-        return f"{SIRV_DOMAIN}/obra/{filename}"
+        return f"{SIRV_DOMAIN}/obra/{filename}
 
-    except Exception as e:
-        print("ERROR SIRV:", e)
+    except:
         return "error_total"
 
 
-# 📩 FUNCIÓN EMAIL
-def enviar_pdf_por_correo(pdf_path, nombre):
-    try:
-        msg = EmailMessage()
-        msg["Subject"] = f"Reporte de obra - {nombre}"
-        msg["From"] = EMAIL_SENDER
-        msg["To"] = EMAIL_RECEIVER
-
-        msg.set_content("Se adjunta el reporte generado desde el sistema.")
-
-        with open(pdf_path, "rb") as f:
-            file_data = f.read()
-            file_name = os.path.basename(pdf_path)
-
-        msg.add_attachment(file_data, maintype="application", subtype="pdf", filename=file_name)
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            smtp.send_message(msg)
-
-        print("Correo enviado correctamente")
-
-    except Exception as e:
-        print("Error enviando correo:", e)
-
-
+# ----------------------------
+# FORMULARIO
+# ----------------------------
 @app.route("/", methods=["GET", "POST"])
 def form():
     if request.method == "POST":
+
         obra = request.form["obra"]
         nombre = request.form["nombre"]
         actividad = request.form["actividad"]
@@ -113,28 +78,26 @@ def form():
         if foto and foto.filename != "":
             try:
                 img = Image.open(foto)
-
                 if img.mode != "RGB":
                     img = img.convert("RGB")
 
                 img.thumbnail((600, 600))
 
-                temp_path = os.path.join(UPLOAD_FOLDER, "temp.jpg")
-                img.save(temp_path, optimize=True, quality=50)
+                temp = os.path.join(UPLOAD_FOLDER, "temp.jpg")
+                img.save(temp, optimize=True, quality=50)
 
-                with open(temp_path, "rb") as f:
+                with open(temp, "rb") as f:
                     url_imagen = subir_a_sirv(f)
 
-                os.remove(temp_path)
+                os.remove(temp)
 
-            except Exception as e:
-                print("Error imagen:", e)
+            except:
                 url_imagen = "error_imagen"
 
-        # 📄 GENERAR PDF
+        # 📄 PDF
         pdf_name = f"{PDF_FOLDER}/reporte_{nombre}_{datetime.now().timestamp()}.pdf"
-        c = canvas.Canvas(pdf_name, pagesize=letter)
 
+        c = canvas.Canvas(pdf_name, pagesize=letter)
         c.drawString(100, 750, f"Obra: {obra}")
         c.drawString(100, 730, f"Obrero: {nombre}")
         c.drawString(100, 710, f"Ubicación: {ubicacion}")
@@ -143,25 +106,52 @@ def form():
         c.drawString(100, 650, f"Cantidad: {cantidad}")
         c.drawString(100, 630, f"Fecha: {fecha}")
         c.drawString(100, 610, f"Foto: {url_imagen}")
-
         c.save()
 
-        # 🔥 pequeño delay por seguridad
-        time.sleep(0.5)
-
-        # 📩 ENVIAR EMAIL
-        enviar_pdf_por_correo(pdf_name, nombre)
+        time.sleep(0.3)
 
         return redirect(url_for("success"))
 
     return render_template("form.html")
 
 
+# ----------------------------
+# SUCCESS
+# ----------------------------
 @app.route("/success")
 def success():
     return render_template("success.html")
 
 
+# ----------------------------
+# ADMIN (PROTEGIDO)
+# ----------------------------
+def auth():
+    return Response("Acceso restringido", 401,
+                    {"WWW-Authenticate": 'Basic realm="Login"'})
+
+def check_auth(user, password):
+    return user == "admin" and password == "1234"
+
+
+@app.route("/admin/reportes")
+def reportes():
+    auth_data = request.authorization
+    if not auth_data or not check_auth(auth_data.username, auth_data.password):
+        return auth()
+
+    archivos = os.listdir(PDF_FOLDER)
+    return render_template("admin.html", archivos=archivos)
+
+
+@app.route("/admin/descargar/<filename>")
+def descargar(filename):
+    return send_file(os.path.join(PDF_FOLDER, filename), as_attachment=True)
+
+
+# ----------------------------
+# RUN
+# ----------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

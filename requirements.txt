@@ -1,4 +1,5 @@
 Flask
 reportlab
+openpyxl
 Pillow
 requests

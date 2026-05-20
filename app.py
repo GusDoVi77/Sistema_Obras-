@@ -21,8 +21,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PDF_FOLDER, exist_ok=True)
 
 # 🔐 CONFIG EMAIL (CAMBIAR ESTO)
-EMAIL_SENDER = "obreros.eutova@gmail.com"
-EMAIL_PASSWORD = "toto2717"
+EMAIL_SENDER = "guz72013@gmail.com"
+EMAIL_PASSWORD = "muxs dzzb jknj jlho"
 EMAIL_RECEIVER = "guz72013@gmail.com"
 
 CLIENT_ID = "UM9DzKb3TmN1Fbi5sRewrscfCnD"

@@ -1,12 +1,16 @@
-from flask import Flask, render_template, request, redirect, url_for,send_file
+from flask import Flask, render_template, request, redirect, url_for, send_file
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import os
 from datetime import datetime
 from PIL import Image
 import requests
+import time
 
 app = Flask(__name__)
+
+# 🔥 evita crasheos por archivos grandes
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
 UPLOAD_FOLDER = "fotos"
 PDF_FOLDER = "pdfs"
@@ -18,7 +22,7 @@ CLIENT_ID = "UM9DzKb3TmN1Fbi5sRewrscfCnD"
 CLIENT_SECRET = "0m3aoJdhRPEygjmKdXMWaaihmgf0FM1V2UNes9nLf89VkrsvUeMvsj+D52af1n140YkiXpUPSYdpyaKph97N9g=="
 SIRV_DOMAIN = "https://gusdovi.sirv.com"
 
-# 🚀 FUNCIÓN CORREGIDA
+# 🚀 FUNCIÓN SIRV
 def subir_a_sirv(file):
     try:
         auth = requests.post(
@@ -44,7 +48,6 @@ def subir_a_sirv(file):
             "Content-Type": "application/octet-stream"
         }
 
-        # 🔥 FIX CLAVE
         file.seek(0)
         data = file.read()
 
@@ -87,7 +90,6 @@ def form():
                 temp_path = os.path.join(UPLOAD_FOLDER, "temp.jpg")
                 img.save(temp_path, optimize=True, quality=50)
 
-                # 🔥 ABRIR BIEN EL ARCHIVO
                 with open(temp_path, "rb") as f:
                     url_imagen = subir_a_sirv(f)
 
@@ -97,6 +99,7 @@ def form():
                 print("Error imagen:", e)
                 url_imagen = "error_imagen"
 
+        # 📄 GENERAR PDF
         pdf_name = f"{PDF_FOLDER}/reporte_{nombre}_{datetime.now().timestamp()}.pdf"
         c = canvas.Canvas(pdf_name, pagesize=letter)
 
@@ -111,7 +114,14 @@ def form():
 
         c.save()
 
-        return send_file(pdf_name, as_attachment=True)
+        # 🔥 FIX CLAVE PARA RENDER
+        time.sleep(0.5)
+
+        return send_file(
+            os.path.abspath(pdf_name),
+            as_attachment=True,
+            download_name="reporte_obra.pdf"
+        )
 
     return render_template("form.html")
 

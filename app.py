@@ -14,8 +14,8 @@ UPLOAD_FOLDER = "fotos"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # ☁️ SIRV
-CLIENT_ID = "TU_CLIENT_ID"
-CLIENT_SECRET = "TU_CLIENT_SECRET"
+CLIENT_ID = "8ARvedBbjChk50zgogeCBPtR5sN"
+CLIENT_SECRET = "egU7oS4olUnvB0VrVXrEnhRquiVCRAJ86ZLDsFNsDq0z632VxpVJDdAJQPQ+fIrxlIT5QeWKjnsNE4c5zLSlHw=="
 SIRV_DOMAIN = "https://gusdovi.sirv.com"
 
 

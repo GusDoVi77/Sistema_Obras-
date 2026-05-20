@@ -14,41 +14,51 @@ PDF_FOLDER = "pdfs"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PDF_FOLDER, exist_ok=True)
 
-# 🔐 CREDENCIALES SIRV (CAMBIAR DESPUÉS POR SEGURIDAD)
 CLIENT_ID = "UM9DzKb3TmN1Fbi5sRewrscfCnD"
 CLIENT_SECRET = "0m3aoJdhRPEygjmKdXMWaaihmgf0FM1V2UNes9nLf89VkrsvUeMvsj+D52af1n140YkiXpUPSYdpyaKph97N9g=="
 SIRV_DOMAIN = "https://gusdovi.sirv.com"
 
-# 🚀 FUNCIÓN PARA SUBIR A SIRV
+# 🚀 FUNCIÓN CORREGIDA
 def subir_a_sirv(file):
-    # Obtener token
-    auth = requests.post(
-        "https://api.sirv.com/v2/token",
-        json={
-            "clientId": CLIENT_ID,
-            "clientSecret": CLIENT_SECRET
+    try:
+        auth = requests.post(
+            "https://api.sirv.com/v2/token",
+            json={
+                "clientId": CLIENT_ID,
+                "clientSecret": CLIENT_SECRET
+            }
+        )
+
+        if auth.status_code != 200:
+            print("Auth error:", auth.text)
+            return "error_auth"
+
+        token = auth.json().get("token")
+
+        filename = f"{datetime.now().timestamp()}.jpg"
+
+        upload_url = f"https://api.sirv.com/v2/files/upload?filename=/obra/{filename}"
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/octet-stream"
         }
-    )
 
-    token = auth.json()["token"]
+        # 🔥 FIX CLAVE
+        file.seek(0)
+        data = file.read()
 
-    # Nombre único
-    filename = f"{datetime.now().timestamp()}.jpg"
+        response = requests.post(upload_url, headers=headers, data=data)
 
-    # Subir archivo
-    upload_url = f"https://api.sirv.com/v2/files/upload?filename=/obra/{filename}"
+        if response.status_code != 200:
+            print("Upload error:", response.text)
+            return "error_upload"
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/octet-stream"
-    }
+        return f"{SIRV_DOMAIN}/obra/{filename}"
 
-    # ⚠️ IMPORTANTE: leer archivo
-    file.stream.seek(0)
-    requests.post(upload_url, headers=headers, data=file.read())
-
-    # URL final
-    return f"{SIRV_DOMAIN}/obra/{filename}"
+    except Exception as e:
+        print("ERROR SIRV:", e)
+        return "error_total"
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -62,13 +72,11 @@ def form():
         cantidad = request.form["cantidad"]
         fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-        # 📸 FOTO → SIRV
         foto = request.files.get("foto")
         url_imagen = "sin_foto"
 
         if foto and foto.filename != "":
             try:
-                # 🧠 Procesar imagen antes de subir
                 img = Image.open(foto)
 
                 if img.mode != "RGB":
@@ -76,21 +84,19 @@ def form():
 
                 img.thumbnail((600, 600))
 
-                # Guardar temporalmente
                 temp_path = os.path.join(UPLOAD_FOLDER, "temp.jpg")
                 img.save(temp_path, optimize=True, quality=50)
 
-                # Subir a Sirv
+                # 🔥 ABRIR BIEN EL ARCHIVO
                 with open(temp_path, "rb") as f:
                     url_imagen = subir_a_sirv(f)
 
                 os.remove(temp_path)
 
             except Exception as e:
-                print("Error Sirv:", e)
-                url_imagen = "error_subida"
+                print("Error imagen:", e)
+                url_imagen = "error_imagen"
 
-        # 🧾 PDF
         pdf_name = f"{PDF_FOLDER}/reporte_{nombre}_{datetime.now().timestamp()}.pdf"
         c = canvas.Canvas(pdf_name, pagesize=letter)
 

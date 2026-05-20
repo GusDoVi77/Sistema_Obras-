@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, send_file
+from flask import Flask, render_template, request, redirect, url_for
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import os
@@ -6,6 +6,8 @@ from datetime import datetime
 from PIL import Image
 import requests
 import time
+import smtplib
+from email.message import EmailMessage
 
 app = Flask(__name__)
 
@@ -17,6 +19,11 @@ PDF_FOLDER = "pdfs"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PDF_FOLDER, exist_ok=True)
+
+# 🔐 CONFIG EMAIL (CAMBIAR ESTO)
+EMAIL_SENDER = "obreros.eutova@gmail.com"
+EMAIL_PASSWORD = "toto2717"
+EMAIL_RECEIVER = "guz72013@gmail.com"
 
 CLIENT_ID = "UM9DzKb3TmN1Fbi5sRewrscfCnD"
 CLIENT_SECRET = "0m3aoJdhRPEygjmKdXMWaaihmgf0FM1V2UNes9nLf89VkrsvUeMvsj+D52af1n140YkiXpUPSYdpyaKph97N9g=="
@@ -40,7 +47,6 @@ def subir_a_sirv(file):
         token = auth.json().get("token")
 
         filename = f"{datetime.now().timestamp()}.jpg"
-
         upload_url = f"https://api.sirv.com/v2/files/upload?filename=/obra/{filename}"
 
         headers = {
@@ -62,6 +68,32 @@ def subir_a_sirv(file):
     except Exception as e:
         print("ERROR SIRV:", e)
         return "error_total"
+
+
+# 📩 FUNCIÓN EMAIL
+def enviar_pdf_por_correo(pdf_path, nombre):
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = f"Reporte de obra - {nombre}"
+        msg["From"] = EMAIL_SENDER
+        msg["To"] = EMAIL_RECEIVER
+
+        msg.set_content("Se adjunta el reporte generado desde el sistema.")
+
+        with open(pdf_path, "rb") as f:
+            file_data = f.read()
+            file_name = os.path.basename(pdf_path)
+
+        msg.add_attachment(file_data, maintype="application", subtype="pdf", filename=file_name)
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            smtp.send_message(msg)
+
+        print("Correo enviado correctamente")
+
+    except Exception as e:
+        print("Error enviando correo:", e)
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -114,14 +146,13 @@ def form():
 
         c.save()
 
-        # 🔥 FIX CLAVE PARA RENDER
+        # 🔥 pequeño delay por seguridad
         time.sleep(0.5)
 
-        return send_file(
-            os.path.abspath(pdf_name),
-            as_attachment=True,
-            download_name="reporte_obra.pdf"
-        )
+        # 📩 ENVIAR EMAIL
+        enviar_pdf_por_correo(pdf_name, nombre)
+
+        return redirect(url_for("success"))
 
     return render_template("form.html")
 

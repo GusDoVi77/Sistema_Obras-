@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for,send_file
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import os
@@ -111,7 +111,7 @@ def form():
 
         c.save()
 
-        return redirect(url_for("success"))
+        return send_file(pdf_name, as_attachment=True)
 
     return render_template("form.html")
 

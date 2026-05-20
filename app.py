@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for
 import os
 from datetime import datetime
 from PIL import Image
@@ -122,7 +122,7 @@ def form():
         if foto and foto.filename != "":
             url_imagen = subir_imagen(foto)
 
-        # 📊 cargar o crear excel
+        # 📊 Excel acumulativo
         archivo = descargar_excel()
 
         if archivo:
@@ -134,24 +134,27 @@ def form():
             ws.title = "Reporte"
             ws.append(["Obra", "Obrero", "Ubicación", "Actividad", "Etapa", "Fecha", "Foto"])
 
-        # ➕ agregar fila
         ws.append([obra, nombre, ubicacion, actividad, etapa, fecha, url_imagen])
 
         wb.save("maestro.xlsx")
 
         time.sleep(0.5)
 
-        # ☁️ subir excel actualizado
-        url_excel = subir_archivo("maestro.xlsx", "xlsx", "reportes")
+        subir_archivo("maestro.xlsx", "xlsx", "reportes")
 
         os.remove("maestro.xlsx")
 
-        return f"""
-        <h2>Reporte registrado correctamente ✅</h2>
-        <p><a href="{url_excel}" target="_blank">Ver Excel actualizado</a></p>
-        """
+        return redirect(url_for("success"))
 
     return render_template("form.html")
+
+
+# ----------------------------
+# SUCCESS
+# ----------------------------
+@app.route("/success")
+def success():
+    return render_template("success.html")
 
 
 # ----------------------------

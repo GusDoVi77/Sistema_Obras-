@@ -22,7 +22,7 @@ SIRV_DOMAIN = "https://gusdovi.sirv.com"
 # ----------------------------
 # SUBIR ARCHIVO A SIRV
 # ----------------------------
-def subir_archivo(file_path, extension, carpeta):
+def subir_archivo(file_path, extension, carpeta, fijo=False):
     try:
         auth = requests.post(
             "https://api.sirv.com/v2/token",
@@ -35,7 +35,12 @@ def subir_archivo(file_path, extension, carpeta):
 
         token = auth.json().get("token")
 
-        filename = f"{datetime.now().timestamp()}.{extension}"
+        # 🔥 CLAVE: nombre fijo para Excel acumulativo
+        if fijo:
+            filename = f"maestro.{extension}"
+        else:
+            filename = f"{datetime.now().timestamp()}.{extension}"
+
         upload_url = f"https://api.sirv.com/v2/files/upload?filename=/{carpeta}/{filename}"
 
         headers = {
@@ -65,14 +70,18 @@ def descargar_excel():
     local_file = "maestro.xlsx"
 
     try:
-        r = requests.get(url)
+        r = requests.get(url, timeout=10)
+
         if r.status_code == 200:
             with open(local_file, "wb") as f:
                 f.write(r.content)
             return local_file
         else:
+            print("⚠️ No existe maestro.xlsx aún")
             return None
-    except:
+
+    except Exception as e:
+        print("Error descarga:", e)
         return None
 
 
@@ -93,11 +102,13 @@ def subir_imagen(file):
 
         url = subir_archivo(temp, "jpg", "obra")
 
-        os.remove(temp)
+        if os.path.exists(temp):
+            os.remove(temp)
 
         return url if url else "error_imagen"
 
-    except:
+    except Exception as e:
+        print("Error imagen:", e)
         return "error_imagen"
 
 
@@ -107,6 +118,8 @@ def subir_imagen(file):
 @app.route("/", methods=["GET", "POST"])
 def form():
     if request.method == "POST":
+
+        print("🚀 Nuevo envío recibido")
 
         obra = request.form["obra"]
         nombre = request.form["nombre"]
@@ -125,24 +138,40 @@ def form():
         # 📊 Excel acumulativo
         archivo = descargar_excel()
 
-        if archivo:
-            wb = load_workbook(archivo)
-            ws = wb.active
-        else:
+        try:
+            if archivo:
+                wb = load_workbook(archivo)
+                ws = wb.active
+            else:
+                raise Exception("No existe archivo en Sirv")
+        except:
+            print("⚠️ Creando maestro.xlsx por primera vez")
             wb = Workbook()
             ws = wb.active
             ws.title = "Reporte"
-            ws.append(["Obra", "Obrero", "Ubicación", "Actividad", "Etapa", "Fecha", "Foto"])
+            ws.append([
+                "Obra", "Obrero", "Ubicación",
+                "Actividad", "Etapa", "Fecha", "Foto"
+            ])
 
+        # ➕ agregar fila
         ws.append([obra, nombre, ubicacion, actividad, etapa, fecha, url_imagen])
 
         wb.save("maestro.xlsx")
 
         time.sleep(0.5)
 
-        subir_archivo("maestro.xlsx", "xlsx", "reportes")
+        # ☁️ subir SIEMPRE el mismo archivo
+        url_excel = subir_archivo("maestro.xlsx", "xlsx", "reportes", fijo=True)
 
-        os.remove("maestro.xlsx")
+        if url_excel:
+            print("✅ Excel actualizado:", url_excel)
+        else:
+            print("❌ Error subiendo Excel")
+
+        # 🧹 borrar archivo local (seguro)
+        if os.path.exists("maestro.xlsx"):
+            os.remove("maestro.xlsx")
 
         return redirect(url_for("success"))
 

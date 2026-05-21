@@ -3,3 +3,4 @@ reportlab
 openpyxl
 Pillow
 requests
+psycopg2-binary

@@ -3,8 +3,7 @@ import os
 from datetime import datetime
 from PIL import Image
 import requests
-import time
-from openpyxl import Workbook, load_workbook
+import psycopg2
 
 app = Flask(__name__)
 
@@ -18,98 +17,75 @@ CLIENT_ID = "8ARvedBbjChk50zgogeCBPtR5sN"
 CLIENT_SECRET = "egU7oS4olUnvB0VrVXrEnhRquiVCRAJ86ZLDsFNsDq0z632VxpVJDdAJQPQ+fIrxlIT5QeWKjnsNE4c5zLSlHw=="
 SIRV_DOMAIN = "https://gusdovi.sirv.com"
 
+# 🗄️ DATABASE
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 
 # ----------------------------
-# SUBIR ARCHIVO A SIRV
+# CONEXIÓN DB
 # ----------------------------
-def subir_archivo(file_path, extension, carpeta, fijo=False):
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
+
+
+# ----------------------------
+# CREAR TABLA
+# ----------------------------
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS reportes (
+        id SERIAL PRIMARY KEY,
+        obra TEXT,
+        nombre TEXT,
+        ubicacion TEXT,
+        actividad TEXT,
+        etapa TEXT,
+        fecha TEXT,
+        foto TEXT
+    )
+    """)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+init_db()
+
+
+# ----------------------------
+# SUBIR A SIRV
+# ----------------------------
+def subir_imagen(file):
     try:
         auth = requests.post(
             "https://api.sirv.com/v2/token",
             json={"clientId": CLIENT_ID, "clientSecret": CLIENT_SECRET}
         )
 
-        if auth.status_code != 200:
-            print("Error auth:", auth.text)
-            return None
-
         token = auth.json().get("token")
 
-        # 🔥 CLAVE: nombre fijo para Excel acumulativo
-        if fijo:
-            filename = f"maestro.{extension}"
-        else:
-            filename = f"{datetime.now().timestamp()}.{extension}"
-
-        upload_url = f"https://api.sirv.com/v2/files/upload?filename=/{carpeta}/{filename}"
+        filename = f"{datetime.now().timestamp()}.jpg"
+        upload_url = f"https://api.sirv.com/v2/files/upload?filename=/obra/{filename}"
 
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/octet-stream"
         }
 
-        with open(file_path, "rb") as f:
-            response = requests.post(upload_url, headers=headers, data=f.read())
+        file.seek(0)
+        response = requests.post(upload_url, headers=headers, data=file.read())
 
         if response.status_code != 200:
-            print("Error subida:", response.text)
-            return None
+            return "error"
 
-        return f"{SIRV_DOMAIN}/{carpeta}/{filename}"
-
-    except Exception as e:
-        print("Error:", e)
-        return None
-
-
-# ----------------------------
-# DESCARGAR EXCEL EXISTENTE
-# ----------------------------
-def descargar_excel():
-    url = f"{SIRV_DOMAIN}/reportes/maestro.xlsx"
-    local_file = "maestro.xlsx"
-
-    try:
-        r = requests.get(url, timeout=10)
-
-        if r.status_code == 200:
-            with open(local_file, "wb") as f:
-                f.write(r.content)
-            return local_file
-        else:
-            print("⚠️ No existe maestro.xlsx aún")
-            return None
-
-    except Exception as e:
-        print("Error descarga:", e)
-        return None
-
-
-# ----------------------------
-# SUBIR IMAGEN
-# ----------------------------
-def subir_imagen(file):
-    try:
-        img = Image.open(file)
-
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-
-        img.thumbnail((600, 600))
-
-        temp = os.path.join(UPLOAD_FOLDER, "temp.jpg")
-        img.save(temp, optimize=True, quality=50)
-
-        url = subir_archivo(temp, "jpg", "obra")
-
-        if os.path.exists(temp):
-            os.remove(temp)
-
-        return url if url else "error_imagen"
+        return f"{SIRV_DOMAIN}/obra/{filename}"
 
     except Exception as e:
         print("Error imagen:", e)
-        return "error_imagen"
+        return "error"
 
 
 # ----------------------------
@@ -118,8 +94,6 @@ def subir_imagen(file):
 @app.route("/", methods=["GET", "POST"])
 def form():
     if request.method == "POST":
-
-        print("🚀 Nuevo envío recibido")
 
         obra = request.form["obra"]
         nombre = request.form["nombre"]
@@ -135,47 +109,43 @@ def form():
         if foto and foto.filename != "":
             url_imagen = subir_imagen(foto)
 
-        # 📊 Excel acumulativo
-        archivo = descargar_excel()
-
+        # 🗄️ GUARDAR EN DB
         try:
-            if archivo:
-                wb = load_workbook(archivo)
-                ws = wb.active
-            else:
-                raise Exception("No existe archivo en Sirv")
-        except:
-            print("⚠️ Creando maestro.xlsx por primera vez")
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Reporte"
-            ws.append([
-                "Obra", "Obrero", "Ubicación",
-                "Actividad", "Etapa", "Fecha", "Foto"
-            ])
+            conn = get_db()
+            cur = conn.cursor()
 
-        # ➕ agregar fila
-        ws.append([obra, nombre, ubicacion, actividad, etapa, fecha, url_imagen])
+            cur.execute("""
+            INSERT INTO reportes (obra, nombre, ubicacion, actividad, etapa, fecha, foto)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (obra, nombre, ubicacion, actividad, etapa, fecha, url_imagen))
 
-        wb.save("maestro.xlsx")
+            conn.commit()
+            cur.close()
+            conn.close()
 
-        time.sleep(0.5)
-
-        # ☁️ subir SIEMPRE el mismo archivo
-        url_excel = subir_archivo("maestro.xlsx", "xlsx", "reportes", fijo=True)
-
-        if url_excel:
-            print("✅ Excel actualizado:", url_excel)
-        else:
-            print("❌ Error subiendo Excel")
-
-        # 🧹 borrar archivo local (seguro)
-        if os.path.exists("maestro.xlsx"):
-            os.remove("maestro.xlsx")
+        except Exception as e:
+            print("Error DB:", e)
 
         return redirect(url_for("success"))
 
     return render_template("form.html")
+
+
+# ----------------------------
+# PANEL ADMIN
+# ----------------------------
+@app.route("/admin")
+def admin():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM reportes ORDER BY id DESC")
+    datos = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return render_template("admin.html", datos=datos)
 
 
 # ----------------------------
